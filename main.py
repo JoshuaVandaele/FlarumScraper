@@ -4,10 +4,18 @@ import json
 from datetime import datetime
 import os
 
-print("Flarum Forum Scrapper V1.0 - By Folfy_Blue")
-forumUrl = input("Forum URL: ")
+##  CONFIGS  ##
+
+prettyprint_json_file=False
+indent=0
+pages_to_scrap = ["discussions","users","posts"]
 
 ###############
+
+print("Flarum Forum Scrapper V1.1 - By Folfy_Blue")
+forumUrl = input("Forum URL: ")
+
+## FUNCTIONS ##
 
 def login():
 	payload = {
@@ -29,15 +37,26 @@ def scrapPage(session,page):
 	data = [] #not good for memory usage because I have a lot of it, fuck you
 	nextUrl = "https://"+forumUrl+"/api/"+page
 	while True:
-		print("Getting data from '"+nextUrl+"'..")
+		print("Getting data from '"+nextUrl+"'..",end="\r")
 		current = session.get(nextUrl)
 		content = json.loads(current.content)
 		data.append(content["data"])
 		if "next" in content["links"]:
 			nextUrl = content["links"]["next"]
 		else:
-			print("Done! Got all "+page+" data.")
+			print("\nDone! Got all "+page+" data.")
 			return data
+
+def storeData(data,filename,time):
+	path = forumUrl+'/'+time+"/"
+	if not os.path.exists(forumUrl):
+		os.mkdir(forumUrl)
+	if not os.path.exists(path):
+		os.mkdir(path)
+
+	with open(path+filename+".json", 'w', encoding='utf-8') as f:
+	    json.dump(data, f, ensure_ascii=False, sort_keys=prettyprint_json_file, indent=indent)
+	print("Data wrote to '"+path+filename+"'!")
 
 ################
 
@@ -48,20 +67,10 @@ while not session:
 
 print("Logged in!")
 
-data = {
-	"discussions": scrapPage(session,"discussions"),
-	"posts": scrapPage(session,"posts"),
-	"users": scrapPage(session,"users")
-}
+scrapTime = datetime.now().strftime("%Y-%m-%d %H;%M;%S")
 
-print("Writting to file...")
-path = forumUrl+'/'
-filename = datetime.now().strftime("%Y%m%d-%H%M%S")+'.json' #YYMMDD-HHMMSS format
+for page in pages_to_scrap:
+	print()
+	storeData(scrapPage(session,page),page,scrapTime)
 
-if not os.path.exists(path):
-	os.mkdir(path)
-
-with open(path+filename, 'w', encoding='utf-8') as f:
-    json.dump(data, f, ensure_ascii=False)
-
-print("Data wrote to '"+path+filename+"'!")
+print("-== Finished! ==-")
