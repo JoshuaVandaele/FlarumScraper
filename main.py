@@ -7,12 +7,11 @@ import os
 ##  CONFIGS  ##
 
 prettyprint_json_file=False
-indent=0
 pages_to_scrap = ["discussions","users","posts"]
 
 ###############
 
-print("Flarum Forum Scrapper V1.1 - By Folfy_Blue")
+print("Flarum Forum Scrapper V1.2 - By Folfy_Blue")
 forumUrl = input("Forum URL: ")
 
 ## FUNCTIONS ##
@@ -34,18 +33,25 @@ def login():
 
 def scrapPage(session,page):
 	print("Scrapping "+page)
-	data = [] #not good for memory usage because I have a lot of it, fuck you
+	pages = {} #not good for memory usage because I have a lot of it, fuck you
+
 	nextUrl = "https://"+forumUrl+"/api/"+page
 	while True:
 		print("Getting data from '"+nextUrl+"'..",end="\r")
 		current = session.get(nextUrl)
 		content = json.loads(current.content)
-		data.append(content["data"])
-		if "next" in content["links"]:
-			nextUrl = content["links"]["next"]
+		links = content.pop("links")
+		for key,value in content.items():
+			if type(value) == list:
+				if not key in pages:
+					pages[key] = []
+				pages[key] += value
+
+		if "next" in links:
+			nextUrl = links["next"]
 		else:
 			print("\nDone! Got all "+page+" data.")
-			return data
+			return pages
 
 def storeData(data,filename,time):
 	path = forumUrl+'/'+time+"/"
@@ -55,7 +61,7 @@ def storeData(data,filename,time):
 		os.mkdir(path)
 
 	with open(path+filename+".json", 'w', encoding='utf-8') as f:
-	    json.dump(data, f, ensure_ascii=False, sort_keys=prettyprint_json_file, indent=indent)
+	    json.dump(data, f, ensure_ascii=False, sort_keys=prettyprint_json_file)
 	print("Data wrote to '"+path+filename+"'!")
 
 ################
