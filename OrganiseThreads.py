@@ -1,144 +1,82 @@
-import webbrowser
-import os
+import requests
+import getpass
 import json
+from datetime import datetime
+import os
 
+##  CONFIGS  ##
 
-forum = "bruh"
-snapshot = "moment"
+prettyprint_json_file=False
+pages_to_scrap = ["discussions","users","posts"]
 
-while not os.path.exists(forum):
-	print("Which forum's history do you wish to sort?")
-	for item in os.listdir():
-		if os.path.isdir(item):
-			print("- "+item)
-	forum = input("> ")
+###############
 
-while not os.path.exists(forum+"/"+snapshot):
-	print("Which of these snapshots do you wish to use?")
-	for item in os.listdir(forum):
-		if os.path.isdir(forum+"/"+item): #If the item is a directory
-			print("- "+item)
-	snapshot = input("> ")
+print("Flarum Forum Scrapper V1.2 - By Folfy_Blue")
+forumUrl = input("Forum URL: ")
 
-directory = forum+"/"+snapshot+"/"
+## FUNCTIONS ##
 
-print("Loading the files into memory, please wait..")
+def login():
+	payload = {
+		'identification': input("Username: "),
+		'password': getpass.getpass(),
+		'remember': True
+	}
+	
+	session = requests.Session()
+	r = session.post("https://"+forumUrl+"/api/token", data=json.dumps(payload), headers = {"Content-Type": "application/vnd.api+json"})
 
-files = {}
-for item in os.listdir(directory):
-	if not os.path.isdir(directory+item): #If it's not a directory
-		with open(directory+item, encoding="utf8") as file:
-			print("Loading "+item+"..")
-			files[item] = json.load(file)
-			print("Done!")
+	if r.status_code == 200:
+		token = json.loads(r.content)["token"]
+		session.cookies.set("flarum_remember",token, domain=forumUrl)
+		return session
 
+def scrapPage(session,page):
+	print("Scrapping "+page)
+	pages = {} #not good for memory usage because I have a lot of it, fuck you
 
-threads = {}
-posts = {}
-users = {}
+	nextUrl = "https://"+forumUrl+"/api/"+page
+	while True:
+		print("Getting data from '"+nextUrl+"'..",end="\r")
+		current = session.get(nextUrl)
+		content = json.loads(current.content)
+		links = content.pop("links")
+		for key,value in content.items():
+			if type(value) == list:
+				if not key in pages:
+					pages[key] = []
+				pages[key] += value
 
-users["0"] = {"username":"[Deleted User]"}
-
-for arraycontent in files["users.json"]["data"]: #List of arrays
-	if arraycontent["type"] == "users":
-		key = str(arraycontent["id"])
-		users[key] = {}
-		users[key]["username"] = arraycontent["attributes"]["username"]
-
-for arraycontent in files["posts.json"]["data"]:
-	if arraycontent["type"] == "posts":
-		key = str(arraycontent["id"]) # Post ID
-		posts[key] = {}
-
-		if "contentHtml" in arraycontent["attributes"]:
-			posts[key]["contentHtml"] = arraycontent["attributes"]["contentHtml"]
+		if "next" in links:
+			nextUrl = links["next"]
 		else:
-			posts[key]["contentHtml"] = "POST HAS BEEN DELETED"
-		posts[key]["createdAt"] = arraycontent["attributes"]["createdAt"]
+			print("\nDone! Got all "+page+" data.")
+			return pages
 
-		if not "user" in arraycontent["relationships"]: #Deleted user
-			posts[key]["userID"] = 0
-		else:
-			posts[key]["userID"] = arraycontent["relationships"]["user"]["data"]["id"]
+def storeData(data,filename,time):
+	path = forumUrl+'/'+time+"/"
+	if not os.path.exists(forumUrl):
+		os.mkdir(forumUrl)
+	if not os.path.exists(path):
+		os.mkdir(path)
 
-		posts[key]["likes"] = []
-		for data in arraycontent["relationships"]["likes"]["data"]:
-			posts[key]["likes"].append(data["id"])
+	with open(path+filename+".json", 'w', encoding='utf-8') as f:
+	    json.dump(data, f, ensure_ascii=False, sort_keys=prettyprint_json_file)
+	print("Data wrote to '"+path+filename+"'!")
 
-		posts[key]["threadID"] = arraycontent["relationships"]["discussion"]["data"]["id"]
-		posts[key]["username"] = users[str(posts[key]["userID"])]["username"]
+################
 
+session = login()
+while not session:
+	print("Failed to log in!")
+	session = login()
 
-for arraycontent in files["discussions.json"]["data"]: #List of arrays
-	if arraycontent["type"] == "discussions":
-		key = str(arraycontent["id"]) # Post ID
-		postID = arraycontent["relationships"]["firstPost"]["data"]["id"]
-		threads[key] = {}
-		threads[key]["title"] = arraycontent["attributes"]["title"]
-		threads[key]["comments"] = {}
-		threads[key]["postID"] = postID
-		threads[key]["slug"] = arraycontent["attributes"]["slug"]
-		threads[key]["tags"] = []
-		for data in arraycontent["relationships"]["tags"]["data"]:
-			threads[key]["tags"].append(data["id"])
+print("Logged in!")
 
-for postID,arraycontent in posts.items():
-		threadID = posts[postID]["threadID"]
-		if not threads[threadID]["postID"] == postID:
-			threads[threadID]["comments"][postID] = arraycontent
-		else:
-			threads[threadID]["contentHtml"] = posts[postID]["contentHtml"]
-			threads[threadID]["username"] = posts[postID]["username"]
-			threads[threadID]["createdAt"] = posts[postID]["createdAt"]
-			threads[threadID]["likes"] = posts[postID]["likes"]
-			threads[threadID]["userID"] = posts[postID]["userID"]
+scrapTime = datetime.now().strftime("%Y-%m-%d %H;%M;%S")
 
-"""
-users
-{
-	ID: {"username":""}
-}
+for page in pages_to_scrap:
+	print()
+	storeData(scrapPage(session,page),page,scrapTime)
 
-posts
-{
-	contentHtml
-	createdAt
-	likes
-	userID
-	threadID
-}
-
-threads
-THREADID: { #DONE
-	title:"", #DONE
-	userID:"", #DONE
-	username:"", #DONE
-	contentHtml:"", #DONE
-	createdAt:"", #DONE
-	postID:"", #DONE
-	slug:"",
-	comments: {
-		postID:{
-			userID:"", #DONE
-			username:"", #DONE
-			contentHtml:"", #DONE
-			createdAt:"", #DONE
-			likes: [] #DONE
-		}
-	},
-	likes: [], #DONE
-	tags:[] #DONE
-}
-"""
-
-
-if not os.path.exists(directory+"SortedThreads/"):
-	os.mkdir(directory+"SortedThreads/")
-
-c = 0
-for threadID,threadData in threads.items():
-	print("Storing threads. ("+str(c)+"/"+str(len(threads))+")",end="\r")
-	with open(directory+"SortedThreads/"+threadData["slug"]+".json", "w") as f:
-		json.dump(threadData,f)
-	c+=1
-print("\nDone!")
+print("-== Finished! ==-")
